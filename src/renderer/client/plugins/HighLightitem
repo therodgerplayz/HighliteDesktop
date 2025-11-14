@@ -1,1 +1,224 @@
 
+// src/ItemSkinHighlighter.js
+import { Plugin, SettingsTypes } from "@highlite/core";
+
+const STYLE_ID = "hl-item-skin-style";
+const PREVIEW_CONTAINER_ID = "hl-item-skin-preview-container";
+
+export default class ItemSkinHighlighter extends Plugin {
+  constructor() {
+    super();
+    this.pluginName = "Item Skin Highlighter (Save/Load Presets)";
+    this.author = "SHAD3Z";
+
+    // Master enable
+    this.settings.enabled = {
+      text: "Enable",
+      type: SettingsTypes.checkbox,
+      value: true,
+      callback: () => this.start()
+    };
+
+    // Tier editor
+    this.settings.tiers = {
+      text: "Custom Tiers",
+      type: SettingsTypes.list,
+      value: [
+        { name:"Common", minValue:1, border:"#fff", glow:"#999", background:"#ffffff22", thickness:2, opacity:0.6, enabled:true, animation:"none" },
+        { name:"Rare", minValue:1000, border:"#0095ff", glow:"#33bbff", background:"#0095ff33", thickness:3, opacity:0.7, enabled:true, animation:"pulse" },
+        { name:"Epic", minValue:5000, border:"#a020f0", glow:"#d060ff", background:"#a020f033", thickness:4, opacity:0.8, enabled:true, animation:"glow" },
+        { name:"Legendary", minValue:20000, border:"#ffaa00", glow:"#ffdd55", background:"#ffaa0033", thickness:5, opacity:0.9, enabled:true, animation:"rainbow" }
+      ],
+      itemStructure: {
+        name:{ type:SettingsTypes.text, text:"Tier Name" },
+        minValue:{ type:SettingsTypes.number, text:"Min Value" },
+        border:{ type:SettingsTypes.color, text:"Border Color" },
+        glow:{ type:SettingsTypes.color, text:"Glow Color" },
+        background:{ type:SettingsTypes.color, text:"BG Color" },
+        thickness:{ type:SettingsTypes.slider, text:"Thickness", min:1,max:8 },
+        opacity:{ type:SettingsTypes.slider, text:"Opacity", min:0,max:1,step:0.05 },
+        enabled:{ type:SettingsTypes.checkbox, text:"Enabled" },
+        animation:{ type:SettingsTypes.options, text:"Animation", value:"none", options:["none","pulse","glow","rainbow"] }
+      },
+      callback: () => this.updateStyles()
+    };
+
+    // Preset buttons
+    this.settings.savePreset = {
+      text: "Save Preset",
+      type: SettingsTypes.button,
+      value: 0,
+      callback: () => this.exportPreset()
+    };
+
+    this.settings.loadPreset = {
+      text: "Load Preset",
+      type: SettingsTypes.button,
+      value: 0,
+      callback: () => this.importPreset()
+    };
+  }
+
+  init(){ this.log("Item Skin Highlighter initialized"); }
+
+  start(){
+    this.cleanup();
+    if(!this.settings.enabled.value) return;
+    this.injectPreview();
+    this.updateStyles();
+    this.log("Tier Editor + Presets loaded");
+  }
+
+  stop(){ this.cleanup(); }
+
+  cleanup(){
+    const style = document.getElementById(STYLE_ID); if(style) style.remove();
+    const container = document.getElementById(PREVIEW_CONTAINER_ID); if(container) container.remove();
+  }
+
+  //------------------------------------------
+  // STYLE GENERATION
+  //------------------------------------------
+  updateStyles(){
+    const tiers = this.settings.tiers.value;
+    let css = `
+      @keyframes pulse{0%{transform:scale(1);box-shadow:0 0 5px currentColor;}50%{transform:scale(1.05);box-shadow:0 0 15px currentColor;}100%{transform:scale(1);box-shadow:0 0 5px currentColor;}}
+      @keyframes glow{0%{box-shadow:0 0 5px currentColor;}50%{box-shadow:0 0 20px currentColor;}100%{box-shadow:0 0 5px currentColor;}}
+      @keyframes rainbow{0%{border-color:red;box-shadow:0 0 10px red;}14%{border-color:orange;box-shadow:0 0 10px orange;}28%{border-color:yellow;box-shadow:0 0 10px yellow;}42%{border-color:green;box-shadow:0 0 10px green;}56%{border-color:blue;box-shadow:0 0 10px blue;}70%{border-color:indigo;box-shadow:0 0 10px indigo;}84%{border-color:violet;box-shadow:0 0 10px violet;}100%{border-color:red;box-shadow:0 0 10px red;}}
+    `;
+
+    tiers.forEach((tier,index)=>{
+      if(!tier.enabled) return;
+      const className = `item-skin-tier-${tier.name.replace(/\s+/g,"-").toLowerCase()}`;
+      css+=`.${className}{border:${tier.thickness}px solid ${tier.border};box-shadow:0 0 10px ${tier.glow};background-color:${tier.background};opacity:${tier.opacity};border-radius:4px;transition:.12s;}`;
+      if(tier.animation && tier.animation!=="none") css+=`.${className}{animation:${tier.animation} 1.5s ease-in-out infinite;color:${tier.glow};}`;
+
+      const previewBox=document.getElementById(`preview-${className}`);
+      if(previewBox){
+        previewBox.style.border=`${tier.thickness}px solid ${tier.border}`;
+        previewBox.style.boxShadow=`0 0 10px ${tier.glow}`;
+        previewBox.style.backgroundColor=tier.background;
+        previewBox.style.opacity=tier.opacity;
+        previewBox.style.animation=tier.animation!=="none"?`${tier.animation} 1.5s ease-in-out infinite`:"none";
+        previewBox.style.color=tier.glow;
+      }
+    });
+
+    let styleEl=document.getElementById(STYLE_ID);
+    if(!styleEl){styleEl=document.createElement("style");styleEl.id=STYLE_ID;document.body.appendChild(styleEl);}
+    styleEl.textContent=css;
+  }
+
+  //------------------------------------------
+  // LIVE PREVIEW
+  //------------------------------------------
+  injectPreview(){
+    const container=document.querySelector(`#plugin-settings-${this.pluginName.replace(/ /g,"-")}`);
+    if(!container) return;
+
+    const previewContainer=document.createElement("div");
+    previewContainer.id=PREVIEW_CONTAINER_ID;
+    previewContainer.style.display="flex";
+    previewContainer.style.gap="10px";
+    previewContainer.style.marginTop="10px";
+
+    this.settings.tiers.value.forEach((tier,index)=>{
+      const className=`item-skin-tier-${tier.name.replace(/\s+/g,"-").toLowerCase()}`;
+      const box=document.createElement("div");
+      box.id=`preview-${className}`;
+      box.style.width="80px";
+      box.style.height="40px";
+      box.style.borderRadius="4px";
+      box.title=tier.name;
+      box.draggable=true;
+
+      // Drag & Drop events
+      box.addEventListener("dragstart",(e)=>{
+        e.dataTransfer.setData("text/plain",index.toString());
+        box.style.opacity="0.5";
+      });
+      box.addEventListener("dragend",()=>{box.style.opacity="1";});
+      box.addEventListener("dragover",(e)=>{e.preventDefault();});
+      box.addEventListener("drop",(e)=>{
+        e.preventDefault();
+        const fromIndex=parseInt(e.dataTransfer.getData("text/plain"));
+        const toIndex=index;
+        if(fromIndex===toIndex) return;
+        const tiers=this.settings.tiers.value;
+        const moved=tiers.splice(fromIndex,1)[0];
+        tiers.splice(toIndex,0,moved);
+        this.updateStyles();
+        this.refreshPreviewOrder();
+      });
+
+      previewContainer.appendChild(box);
+    });
+
+    container.appendChild(previewContainer);
+  }
+
+  refreshPreviewOrder(){
+    const container=document.getElementById(PREVIEW_CONTAINER_ID);
+    if(!container) return;
+    container.innerHTML="";
+    this.settings.tiers.value.forEach(tier=>{
+      const className=`item-skin-tier-${tier.name.replace(/\s+/g,"-").toLowerCase()}`;
+      const box=document.createElement("div");
+      box.id=`preview-${className}`;
+      box.style.width="80px";
+      box.style.height="40px";
+      box.style.borderRadius="4px";
+      box.title=tier.name;
+      container.appendChild(box);
+    });
+    this.updateStyles();
+  }
+
+  //------------------------------------------
+  // SAVE / LOAD PRESETS
+  //------------------------------------------
+  exportPreset(){
+    const preset = JSON.stringify(this.settings.tiers.value, null, 2);
+    // Copy to clipboard
+    navigator.clipboard.writeText(preset).then(()=>alert("Preset copied to clipboard!"));
+  }
+
+  importPreset(){
+    const presetJSON = prompt("Paste preset JSON here:");
+    if(!presetJSON) return;
+    try{
+      const preset = JSON.parse(presetJSON);
+      if(Array.isArray(preset)){
+        this.settings.tiers.value = preset;
+        this.updateStyles();
+        this.refreshPreviewOrder();
+        alert("Preset loaded successfully!");
+      } else {
+        alert("Invalid preset format!");
+      }
+    } catch(e){
+      alert("Invalid JSON!");
+    }
+  }
+
+  //------------------------------------------
+  // APPLY TIERS TO ITEMS
+  //------------------------------------------
+  WorldManager_onItemSpawned(evt){
+    if(!this.settings.enabled.value) return;
+    const item=evt?.Item;
+    const value=item?.Value||0;
+    if(!item) return;
+    const el=item.getElement();
+    if(!el) return;
+
+    const tiers=this.settings.tiers.value.filter(t=>t.enabled);
+    for(const tier of tiers){
+      if(value>=tier.minValue){
+        const className=`item-skin-tier-${tier.name.replace(/\s+/g,"-").toLowerCase()}`;
+        el.classList.add(className);
+        return;
+      }
+    }
+  }
+}
